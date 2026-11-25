@@ -5,7 +5,8 @@
 %?- schedule([5,3,3,2,2,2], 2, A), makespan([5,3,3,2,2,2], A, M).   % M = 9 (optimal)
 %?- run_sequential([succ_char(0), succ_char(1)], [1,5], Out).        % Out = [2,6]
 %?- run_parallel([succ_char(0), succ_char(1)], 2, [1,5], Out).       % the same, on 2 threads
-:- module(charpar, [schedule/3, makespan/3, loads/4, optimal_makespan/3, run_sequential/3, run_parallel/4, succ_char/3, copy_char/3, sum_chars/3]).
+%?- plan([5-succ_char(0), 3-succ_char(1), 3-copy_char(0)], 2, P).     % P = [[1], [2,3]]: what each thread runs
+:- module(charpar, [plan/3, schedule/3, makespan/3, loads/4, optimal_makespan/3, run_sequential/3, run_parallel/4, succ_char/3, copy_char/3, sum_chars/3]).
 :- use_module(library(lists)).
 :- use_module(library(apply)).
 :- use_module(library(pairs)).
@@ -34,4 +35,15 @@ copy_char(I, In, C) :- nth0(I, In, C).
 sum_chars(Is, In, C) :- maplist([I, X]>>nth0(I, In, X), Is, Xs), sum_list(Xs, C).
 
 run_sequential(Goals, In, Out) :- maplist([G, C]>>call(G, In, C), Goals, Out0), Out = Out0.
-run_parallel(Goals, W, In, Out) :- concurrent_maplist([G, C]>>call(G, In, C), Goals, Out0), W >= 1, Out = Out0.
+% run_parallel(+Jobs, +W, +Input, -Output): Jobs are Cost-Goal (or a bare Goal, cost 1). The jobs are
+% scheduled onto W workers by LPT, each worker runs its own jobs in turn on its own thread, and the
+% characters are put back in job order, so the schedule is what actually runs.
+run_parallel(Jobs, W, In, Out) :- W >= 1, maplist([J, C-G]>>( J = C0-G0, number(C0) -> C = C0, G = G0 ; C = 1, G = J ), Jobs, CGs),
+    pairs_keys_values(CGs, Costs, Goals), ( Goals == [] -> Out = [] ;
+    schedule(Costs, W, A), numlist(1, W, Ws),
+    maplist([Wk, Mine]>>findall(K-G, ( nth1(K, A, Wk), nth1(K, Goals, G) ), Mine), Ws, PerWorker),
+    concurrent_maplist([Mine, Done]>>maplist([K-G, K-C]>>call(G, In, C), Mine, Done), PerWorker, DoneLists),
+    append(DoneLists, All), msort(All, Sorted), pairs_values(Sorted, Out0), Out = Out0 ).
+% plan(+Jobs, +W, -PerWorker): which jobs (by number) each worker runs, for inspection.
+plan(Jobs, W, PerWorker) :- maplist([J, C]>>( J = C0-_, number(C0) -> C = C0 ; C = 1 ), Jobs, Costs), schedule(Costs, W, A),
+    numlist(1, W, Ws), maplist([Wk, Ks]>>findall(K, nth1(K, A, Wk), Ks), Ws, PerWorker).
