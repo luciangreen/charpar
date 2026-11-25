@@ -32,3 +32,11 @@ theorem(parallel_equals_sequential) :-
     forall(( between(1, 3, N), length(In, N), maplist([X]>>between(0, 2, X), In), Top is N - 1, numlist(0, Top, Is) ),
            ( maplist([I, G]>>(I mod 2 =:= 0 -> G = succ_char(I) ; G = sum_chars(Is)), Is, Gs),
              run_sequential(Gs, In, S), run_parallel(Gs, 2, In, P), S == P )).
+
+% 6. The parallel run follows the schedule: each worker runs exactly its scheduled jobs, every job once, and
+%    with costs the output is still the sequential one.
+theorem(parallel_follows_schedule) :-
+    forall(( costs(Cs), length(Cs, N), N =< 4, between(1, 3, W) ),
+           ( length(Gs, N), maplist(=(succ_char(0)), Gs), pairs_keys_values(Js, Cs, Gs), plan(Js, W, P), schedule(Cs, W, A),
+             numlist(1, W, Ws), forall(nth1(Wk, P, Ks), forall(member(K, Ks), nth1(K, A, Wk))), append(P, All), msort(All, S), numlist(1, N, S),
+             run_parallel(Js, W, [4], O), run_sequential(Gs, [4], O) )).
